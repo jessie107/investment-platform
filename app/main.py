@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.database import engine, Base
 from app.routes import auth, companies, screening, dashboard
 
@@ -14,7 +15,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS
+# CORS - allow everything for Render deployment
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,18 +24,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register API routers
+# Register API routers FIRST (so they take priority)
 app.include_router(auth.router)
 app.include_router(companies.router)
 app.include_router(screening.router)
 app.include_router(dashboard.router)
 
-# Serve frontend static files
-frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend_dist")
-if os.path.exists(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
-
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# Serve frontend SPA - catch all remaining routes
+frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend_dist")
+index_html = os.path.join(frontend_dist, "index.html")
+
+if os.path.exists(frontend_dist):
+    # Mount static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve SPA for any route not handled by API."""
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(index_html)
