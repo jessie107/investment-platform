@@ -12,6 +12,7 @@ from app.schemas.schemas import (
     ComputedMetricResponse,
 )
 from app.auth import get_current_user
+from app.services.data_fetcher import update_company_data, update_all_companies
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -125,3 +126,20 @@ def get_company_metrics(
         .first()
     )
     return metric
+
+
+@router.post("/refresh-data")
+def refresh_market_data(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Pull live prices from Yahoo Finance for all companies."""
+    update_all_companies(db)
+    return {"message": "Market data refresh completed", "status": "ok"}
+
+
+@router.post("/{company_id}/refresh")
+def refresh_company_data(company_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Pull live data for a single company from Yahoo Finance."""
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    update_company_data(db, company)
+    return {"message": f"Data refreshed for {company.ticker}", "status": "ok"}
